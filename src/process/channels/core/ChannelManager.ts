@@ -409,7 +409,11 @@ export class ChannelManager {
     }
 
     try {
-      await this.startPlugin(pluginConfig);
+      if (this.pluginManager.getPlugin(pluginId)) {
+        await this.pluginManager.restartPlugin(pluginConfig);
+      } else {
+        await this.startPlugin(pluginConfig);
+      }
       return { success: true };
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -540,6 +544,9 @@ export class ChannelManager {
         updatedAt: Date.now(),
       };
       db.upsertChannelPlugin(updatedConfig);
+      if (this.pluginManager?.getPlugin(pluginId)) {
+        await this.pluginManager.restartPlugin(updatedConfig);
+      }
       return { success: true, status };
     } catch (error: any) {
       return { success: false, error: error?.message || 'Failed to restart Cloudflare tunnel.' };

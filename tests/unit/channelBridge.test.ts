@@ -267,4 +267,18 @@ describe('channelBridge', () => {
       expect(result.msg).toBe('sessions unavailable');
     });
   });
+
+  describe('mini app tunnel ipc', () => {
+    it('returns mini app tunnel status', async () => {
+      const result = await handlers['getTelegramMiniAppTunnelStatus']();
+      expect(result.success).toBe(true);
+      expect(result.data.state).toBe('idle');
+    });
+
+    it('restarts mini app tunnel', async () => {
+      const result = await handlers['restartTelegramMiniAppTunnel']({ pluginId: 'telegram_default' });
+      expect(result.success).toBe(true);
+      expect(result.data.state).toBe('active');
+    });
+  });
 });

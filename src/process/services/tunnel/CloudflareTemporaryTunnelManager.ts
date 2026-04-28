@@ -5,6 +5,7 @@
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { getCloudflaredBinaryManager } from './CloudflaredBinaryManager';
 
 export type TunnelState = 'idle' | 'starting' | 'active' | 'error' | 'stopped';
 
@@ -31,8 +32,22 @@ export class CloudflareTemporaryTunnelManager {
       startedAt: Date.now(),
     };
 
+    const executablePath = await getCloudflaredBinaryManager().resolveExecutablePath();
+
     return new Promise<TunnelStatus>((resolve, reject) => {
-      const child = spawn('cloudflared', ['tunnel', '--url', localUrl], {
+      let settled = false;
+      const settleResolve = (value: TunnelStatus) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      const settleReject = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      };
+
+      const child = spawn(executablePath, ['tunnel', '--url', localUrl], {
         stdio: ['ignore', 'pipe', 'pipe'],
       });
       this.process = child;
@@ -43,7 +58,7 @@ export class CloudflareTemporaryTunnelManager {
         this.stop().catch(() => {
           // noop
         });
-        reject(new Error(errorMessage));
+        settleReject(new Error(errorMessage));
       }, 30000);
 
       const finalizeActive = (publicUrl: string) => {
@@ -54,7 +69,7 @@ export class CloudflareTemporaryTunnelManager {
           publicUrl,
           error: undefined,
         };
-        resolve(this.status);
+        settleResolve(this.status);
       };
 
       const handleChunk = (chunk: string) => {
@@ -82,7 +97,7 @@ export class CloudflareTemporaryTunnelManager {
           state: 'error',
           error: errorMessage,
         };
-        reject(new Error(errorMessage));
+        settleReject(new Error(errorMessage));
       });
 
       child.on('exit', (code, signal) => {
@@ -106,7 +121,7 @@ export class CloudflareTemporaryTunnelManager {
             state: 'error',
             error: errorMessage,
           };
-          reject(new Error(errorMessage));
+          settleReject(new Error(errorMessage));
         }
       });
     });
@@ -126,7 +141,13 @@ export class CloudflareTemporaryTunnelManager {
     await new Promise<void>((resolve) => {
       const timer = setTimeout(() => {
         try {
-          child.kill('SIGKILL');
+          if (process.platform === 'win32') {
+            if (child.pid) {
+              spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+            }
+          } else {
+            child.kill('SIGKILL');
+          }
         } catch {
           // noop
         }
@@ -139,7 +160,7 @@ export class CloudflareTemporaryTunnelManager {
       });
 
       try {
-        child.kill('SIGTERM');
+        child.kill();
       } catch {
         clearTimeout(timer);
         resolve();

@@ -404,7 +404,18 @@ export class TelegramPlugin extends BasePlugin {
    * Setup bot menu button for Telegram Mini App
    */
   private async setupMiniAppMenuButton(): Promise<void> {
-    if (!this.bot || !this.config?.config?.miniAppEnabled) {
+    if (!this.bot) {
+      return;
+    }
+
+    if (typeof this.bot.api.setChatMenuButton !== 'function') {
+      return;
+    }
+
+    if (!this.config?.config?.miniAppEnabled) {
+      await this.bot.api.setChatMenuButton({
+        menu_button: { type: 'default' },
+      });
       return;
     }
 

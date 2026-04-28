@@ -200,6 +200,18 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
     void loadMiniAppTunnelStatus();
   }, [loadMiniAppTunnelStatus]);
 
+  useEffect(() => {
+    if (!miniAppEnabled) {
+      return;
+    }
+
+    const timer = setInterval(() => {
+      void loadMiniAppTunnelStatus();
+    }, 5000);
+
+    return () => clearInterval(timer);
+  }, [miniAppEnabled, loadMiniAppTunnelStatus]);
+
   const persistSelectedAgent = async (agent: { backend: string; customAgentId?: string; name?: string }) => {
     try {
       await ConfigStorage.set('assistant.telegram.agent', agent);
