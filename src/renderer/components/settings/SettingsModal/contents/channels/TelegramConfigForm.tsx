@@ -318,13 +318,6 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
   const handleSaveMiniAppSettings = async () => {
     setMiniAppSaving(true);
     try {
-      await Promise.all([
-        ConfigStorage.set('assistant.telegram.miniAppEnabled', miniAppEnabled),
-        ConfigStorage.set('assistant.telegram.miniAppAccessMode', miniAppAccessMode),
-        ConfigStorage.set('assistant.telegram.miniAppPublicUrl', miniAppPublicUrl.trim()),
-        ConfigStorage.set('assistant.telegram.miniAppButtonText', miniAppButtonText.trim() || 'Open AionUi'),
-      ]);
-
       if (pluginStatus?.enabled) {
         const result = await channel.enablePlugin.invoke({
           pluginId: 'telegram_default',
@@ -342,6 +335,13 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
           return;
         }
       }
+
+      await Promise.all([
+        ConfigStorage.set('assistant.telegram.miniAppEnabled', miniAppEnabled),
+        ConfigStorage.set('assistant.telegram.miniAppAccessMode', miniAppAccessMode),
+        ConfigStorage.set('assistant.telegram.miniAppPublicUrl', miniAppPublicUrl.trim()),
+        ConfigStorage.set('assistant.telegram.miniAppButtonText', miniAppButtonText.trim() || 'Open AionUi'),
+      ]);
 
       await loadMiniAppTunnelStatus();
       Message.success(t('settings.assistant.telegramMiniAppSaved', 'Mini App settings saved'));

@@ -429,6 +429,12 @@ export class ChannelManager {
     try {
       if (this.getPluginTypeFromId(pluginId) === 'telegram') {
         await getCloudflareTemporaryTunnelManager().stop();
+        const runningPlugin = this.pluginManager?.getPlugin(pluginId);
+        if (runningPlugin instanceof TelegramPlugin) {
+          await runningPlugin.resetMenuButton().catch((error) => {
+            console.warn('[ChannelManager] Failed to reset Telegram menu button:', error);
+          });
+        }
       }
 
       // Stop the plugin

@@ -55,4 +55,19 @@ describe('CloudflaredBinaryManager', () => {
 
     expect(executable.includes('/tmp/aionui-test/bin/cloudflared/latest')).toBe(true);
   });
+
+  it('downloads managed binary when not found in PATH and not present locally', async () => {
+    spawnSyncMock.mockReturnValue({ status: 127 });
+    statMock.mockRejectedValue(new Error('not found'));
+    const downloadSpy = vi
+      .spyOn(CloudflaredBinaryManager.prototype as any, 'downloadManagedBinary')
+      .mockResolvedValue(undefined);
+
+    const manager = new CloudflaredBinaryManager();
+    const executable = await manager.resolveExecutablePath('latest');
+
+    expect(downloadSpy).toHaveBeenCalledOnce();
+    expect(executable.includes('/tmp/aionui-test/bin/cloudflared/latest')).toBe(true);
+    downloadSpy.mockRestore();
+  });
 });

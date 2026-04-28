@@ -435,6 +435,18 @@ export class TelegramPlugin extends BasePlugin {
   }
 
   /**
+   * Reset Telegram chat menu button to platform default
+   */
+  async resetMenuButton(): Promise<void> {
+    if (!this.bot || typeof this.bot.api.setChatMenuButton !== 'function') {
+      return;
+    }
+    await this.bot.api.setChatMenuButton({
+      menu_button: { type: 'default' },
+    });
+  }
+
+  /**
    * Handle /app and /webui commands
    */
   private async handleOpenAppCommand(ctx: Context): Promise<void> {

@@ -155,9 +155,19 @@ export class CloudflaredBinaryManager {
     }
 
     const checksumUrl = `${downloadUrl}.sha256`;
-    await maybeVerifyChecksum(executablePath, checksumUrl).catch((error) => {
-      console.warn('[CloudflaredBinaryManager] Checksum verification skipped:', error);
-    });
+    try {
+      await maybeVerifyChecksum(executablePath, checksumUrl);
+    } catch (error: any) {
+      const message = error?.message ?? String(error);
+      if (message.includes('Download failed')) {
+        console.warn('[CloudflaredBinaryManager] Checksum file unavailable, skipping verification:', message);
+      } else {
+        await unlink(executablePath).catch(() => {
+          // noop
+        });
+        throw error;
+      }
+    }
 
     await writeFile(join(directory, 'VERSION'), version);
 
