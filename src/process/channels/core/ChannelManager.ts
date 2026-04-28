@@ -6,6 +6,11 @@
 
 import { getDatabase } from '@process/services/database';
 import { ExtensionRegistry } from '@process/extensions';
+import { ConfigStorage } from '@/common/config/storage';
+import { SERVER_CONFIG } from '@process/webserver/config/constants';
+import { startWebServerWithInstance } from '@process/webserver/index';
+import { getWebServerInstance, setWebServerInstance } from '@process/bridge/webuiBridge';
+import { getCloudflareTemporaryTunnelManager } from '@process/services/tunnel/CloudflareTemporaryTunnelManager';
 import { getChannelMessageService } from '../agent/ChannelMessageService';
 import { getChannelDefaultModel } from '../actions/SystemActions';
 import { ActionExecutor } from '../gateway/ActionExecutor';
@@ -143,6 +148,8 @@ export class ChannelManager {
     console.log('[ChannelManager] Shutting down...');
 
     try {
+      await getCloudflareTemporaryTunnelManager().stop();
+
       // Stop all plugins
       await this.pluginManager?.stopAll();
 
@@ -259,14 +266,43 @@ export class ChannelManager {
       }
 
       const miniAppEnabled = config.miniAppEnabled;
-      const miniAppUrl = config.miniAppUrl;
+      const miniAppAccessMode = config.miniAppAccessMode;
+      const miniAppPublicUrl = config.miniAppPublicUrl;
       const miniAppButtonText = config.miniAppButtonText;
       pluginRuntimeConfig = {
         ...pluginRuntimeConfig,
         ...(typeof miniAppEnabled === 'boolean' ? { miniAppEnabled } : {}),
-        ...(typeof miniAppUrl === 'string' ? { miniAppUrl: miniAppUrl.trim() } : {}),
+        ...(miniAppAccessMode === 'cloudflare_temporary' ? { miniAppAccessMode } : {}),
+        ...(typeof miniAppPublicUrl === 'string' ? { miniAppPublicUrl: miniAppPublicUrl.trim() } : {}),
         ...(typeof miniAppButtonText === 'string' ? { miniAppButtonText: miniAppButtonText.trim() } : {}),
       };
+
+      if (pluginRuntimeConfig.miniAppEnabled && pluginRuntimeConfig.miniAppAccessMode === 'cloudflare_temporary') {
+        try {
+          const localUrl = await this.ensureWebUiLocalUrl();
+          const tunnelStatus = await getCloudflareTemporaryTunnelManager().start(localUrl);
+          if (!tunnelStatus.publicUrl) {
+            return { success: false, error: 'Cloudflare tunnel started but no public URL was returned.' };
+          }
+          pluginRuntimeConfig = {
+            ...pluginRuntimeConfig,
+            miniAppPublicUrl: tunnelStatus.publicUrl,
+            miniAppTunnelStatus: tunnelStatus.state,
+          };
+        } catch (error: any) {
+          return {
+            success: false,
+            error: error?.message || 'Failed to start Cloudflare temporary tunnel.',
+          };
+        }
+      } else if (pluginRuntimeConfig.miniAppEnabled === false) {
+        await getCloudflareTemporaryTunnelManager().stop();
+        pluginRuntimeConfig = {
+          ...pluginRuntimeConfig,
+          miniAppPublicUrl: '',
+          miniAppTunnelStatus: 'stopped',
+        };
+      }
     } else if (pluginType === 'lark') {
       const appId = config.appId as string | undefined;
       const appSecret = config.appSecret as string | undefined;
@@ -387,6 +423,10 @@ export class ChannelManager {
     const db = await getDatabase();
 
     try {
+      if (this.getPluginTypeFromId(pluginId) === 'telegram') {
+        await getCloudflareTemporaryTunnelManager().stop();
+      }
+
       // Stop the plugin
       await this.pluginManager?.stopPlugin(pluginId);
 
@@ -465,6 +505,63 @@ export class ChannelManager {
 
     // Extension plugins: test connection not supported yet (will be handled by the plugin itself on start)
     return { success: true, botUsername: undefined, error: undefined };
+  }
+
+  getTelegramMiniAppTunnelStatus() {
+    return getCloudflareTemporaryTunnelManager().getStatus();
+  }
+
+  async restartTelegramMiniAppTunnel(pluginId = 'telegram_default'): Promise<{
+    success: boolean;
+    status?: ReturnType<ChannelManager['getTelegramMiniAppTunnelStatus']>;
+    error?: string;
+  }> {
+    const db = await getDatabase();
+    const existing = db.getChannelPlugin(pluginId).data;
+    if (!existing) {
+      return { success: false, error: 'Telegram plugin is not configured.' };
+    }
+
+    if (!existing.config?.miniAppEnabled || existing.config?.miniAppAccessMode !== 'cloudflare_temporary') {
+      return { success: false, error: 'Mini App Cloudflare temporary mode is not enabled.' };
+    }
+
+    try {
+      const localUrl = await this.ensureWebUiLocalUrl();
+      const status = await getCloudflareTemporaryTunnelManager().restart(localUrl);
+
+      const updatedConfig: IChannelPluginConfig = {
+        ...existing,
+        config: {
+          ...existing.config,
+          miniAppPublicUrl: status.publicUrl,
+          miniAppTunnelStatus: status.state,
+        },
+        updatedAt: Date.now(),
+      };
+      db.upsertChannelPlugin(updatedConfig);
+      return { success: true, status };
+    } catch (error: any) {
+      return { success: false, error: error?.message || 'Failed to restart Cloudflare tunnel.' };
+    }
+  }
+
+  private async ensureWebUiLocalUrl(): Promise<string> {
+    const running = getWebServerInstance();
+    if (running?.port) {
+      return `http://127.0.0.1:${running.port}`;
+    }
+
+    const [allowRemotePref, portPref] = await Promise.all([
+      ConfigStorage.get('webui.desktop.allowRemote'),
+      ConfigStorage.get('webui.desktop.port'),
+    ]);
+
+    const preferredPort = typeof portPref === 'number' ? portPref : SERVER_CONFIG.DEFAULT_PORT;
+    const allowRemote = allowRemotePref === true;
+    const instance = await startWebServerWithInstance(preferredPort, allowRemote);
+    setWebServerInstance(instance);
+    return `http://127.0.0.1:${instance.port}`;
   }
 
   /**

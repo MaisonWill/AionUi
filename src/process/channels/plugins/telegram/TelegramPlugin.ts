@@ -448,7 +448,7 @@ export class TelegramPlugin extends BasePlugin {
   }
 
   private getMiniAppUrl(): string | null {
-    const value = this.config?.config?.miniAppUrl;
+    const value = this.config?.config?.miniAppPublicUrl;
     if (typeof value !== 'string') {
       return null;
     }

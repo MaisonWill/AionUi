@@ -33,6 +33,8 @@ vi.mock('../../src/common/adapter/ipcBridge', () => ({
     revokeUser: makeChannel('revokeUser'),
     getActiveSessions: makeChannel('getActiveSessions'),
     syncChannelSettings: makeChannel('syncChannelSettings'),
+    getTelegramMiniAppTunnelStatus: makeChannel('getTelegramMiniAppTunnelStatus'),
+    restartTelegramMiniAppTunnel: makeChannel('restartTelegramMiniAppTunnel'),
   },
 }));
 
@@ -42,6 +44,8 @@ vi.mock('@process/channels/core/ChannelManager', () => ({
     disablePlugin: vi.fn(async () => ({ success: true })),
     testPlugin: vi.fn(async () => ({ success: true })),
     syncChannelSettings: vi.fn(async () => ({ success: true })),
+    getTelegramMiniAppTunnelStatus: vi.fn(() => ({ state: 'idle' })),
+    restartTelegramMiniAppTunnel: vi.fn(async () => ({ success: true, status: { state: 'active' } })),
   })),
 }));
 

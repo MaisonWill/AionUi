@@ -9,7 +9,7 @@ import { acpConversation, channel } from '@/common/adapter/ipcBridge';
 import { ConfigStorage } from '@/common/config/storage';
 import GeminiModelSelector from '@/renderer/pages/conversation/platforms/gemini/GeminiModelSelector';
 import type { GeminiModelSelection } from '@/renderer/pages/conversation/platforms/gemini/useGeminiModelSelection';
-import { Button, Dropdown, Empty, Input, Menu, Message, Spin, Switch, Tooltip } from '@arco-design/web-react';
+import { Button, Dropdown, Empty, Input, Menu, Message, Select, Spin, Switch, Tooltip } from '@arco-design/web-react';
 import { CheckOne, CloseOne, Copy, Delete, Down, Refresh } from '@icon-park/react';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -69,9 +69,15 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
   const [pendingPairings, setPendingPairings] = useState<IChannelPairingRequest[]>([]);
   const [authorizedUsers, setAuthorizedUsers] = useState<IChannelUser[]>([]);
   const [miniAppEnabled, setMiniAppEnabled] = useState(false);
-  const [miniAppUrl, setMiniAppUrl] = useState('');
+  const [miniAppAccessMode, setMiniAppAccessMode] = useState<'cloudflare_temporary'>('cloudflare_temporary');
+  const [miniAppPublicUrl, setMiniAppPublicUrl] = useState('');
+  const [miniAppTunnelStatus, setMiniAppTunnelStatus] = useState<'idle' | 'starting' | 'active' | 'error' | 'stopped'>(
+    'idle'
+  );
+  const [miniAppTunnelError, setMiniAppTunnelError] = useState('');
   const [miniAppButtonText, setMiniAppButtonText] = useState('Open AionUi');
   const [miniAppSaving, setMiniAppSaving] = useState(false);
+  const [miniAppRestarting, setMiniAppRestarting] = useState(false);
 
   // Agent selection (used for Telegram conversations)
   const [availableAgents, setAvailableAgents] = useState<
@@ -121,11 +127,19 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
   useEffect(() => {
     const loadAgentsAndSelection = async () => {
       try {
-        const [agentsResp, saved, savedMiniAppEnabled, savedMiniAppUrl, savedMiniAppButtonText] = await Promise.all([
+        const [
+          agentsResp,
+          saved,
+          savedMiniAppEnabled,
+          savedMiniAppAccessMode,
+          savedMiniAppPublicUrl,
+          savedMiniAppButtonText,
+        ] = await Promise.all([
           acpConversation.getAvailableAgents.invoke(),
           ConfigStorage.get('assistant.telegram.agent'),
           ConfigStorage.get('assistant.telegram.miniAppEnabled'),
-          ConfigStorage.get('assistant.telegram.miniAppUrl'),
+          ConfigStorage.get('assistant.telegram.miniAppAccessMode'),
+          ConfigStorage.get('assistant.telegram.miniAppPublicUrl'),
           ConfigStorage.get('assistant.telegram.miniAppButtonText'),
         ]);
 
@@ -155,8 +169,11 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
         if (typeof savedMiniAppEnabled === 'boolean') {
           setMiniAppEnabled(savedMiniAppEnabled);
         }
-        if (typeof savedMiniAppUrl === 'string') {
-          setMiniAppUrl(savedMiniAppUrl);
+        if (savedMiniAppAccessMode === 'cloudflare_temporary') {
+          setMiniAppAccessMode(savedMiniAppAccessMode);
+        }
+        if (typeof savedMiniAppPublicUrl === 'string') {
+          setMiniAppPublicUrl(savedMiniAppPublicUrl);
         }
         if (typeof savedMiniAppButtonText === 'string' && savedMiniAppButtonText.trim()) {
           setMiniAppButtonText(savedMiniAppButtonText);
@@ -168,6 +185,20 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
 
     void loadAgentsAndSelection();
   }, []);
+
+  const loadMiniAppTunnelStatus = useCallback(async () => {
+    const result = await channel.getTelegramMiniAppTunnelStatus.invoke();
+    if (!result.success || !result.data) {
+      return;
+    }
+    setMiniAppTunnelStatus(result.data.state);
+    setMiniAppPublicUrl(result.data.publicUrl || '');
+    setMiniAppTunnelError(result.data.error || '');
+  }, []);
+
+  useEffect(() => {
+    void loadMiniAppTunnelStatus();
+  }, [loadMiniAppTunnelStatus]);
 
   const persistSelectedAgent = async (agent: { backend: string; customAgentId?: string; name?: string }) => {
     try {
@@ -253,7 +284,8 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
         config: {
           token: telegramToken.trim(),
           miniAppEnabled,
-          miniAppUrl: miniAppUrl.trim(),
+          miniAppAccessMode,
+          miniAppPublicUrl: miniAppPublicUrl.trim(),
           miniAppButtonText: miniAppButtonText.trim(),
         },
       });
@@ -272,18 +304,12 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
   };
 
   const handleSaveMiniAppSettings = async () => {
-    if (miniAppEnabled && !miniAppUrl.trim()) {
-      Message.warning(
-        t('settings.assistant.telegramMiniAppUrlRequired', 'Please enter a public HTTPS URL for Telegram Mini App')
-      );
-      return;
-    }
-
     setMiniAppSaving(true);
     try {
       await Promise.all([
         ConfigStorage.set('assistant.telegram.miniAppEnabled', miniAppEnabled),
-        ConfigStorage.set('assistant.telegram.miniAppUrl', miniAppUrl.trim()),
+        ConfigStorage.set('assistant.telegram.miniAppAccessMode', miniAppAccessMode),
+        ConfigStorage.set('assistant.telegram.miniAppPublicUrl', miniAppPublicUrl.trim()),
         ConfigStorage.set('assistant.telegram.miniAppButtonText', miniAppButtonText.trim() || 'Open AionUi'),
       ]);
 
@@ -292,7 +318,8 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
           pluginId: 'telegram_default',
           config: {
             miniAppEnabled,
-            miniAppUrl: miniAppUrl.trim(),
+            miniAppAccessMode,
+            miniAppPublicUrl: miniAppPublicUrl.trim(),
             miniAppButtonText: miniAppButtonText.trim(),
           },
         });
@@ -304,6 +331,7 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
         }
       }
 
+      await loadMiniAppTunnelStatus();
       Message.success(t('settings.assistant.telegramMiniAppSaved', 'Mini App settings saved'));
     } catch (error: any) {
       Message.error(
@@ -311,6 +339,21 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
       );
     } finally {
       setMiniAppSaving(false);
+    }
+  };
+
+  const handleRestartMiniAppTunnel = async () => {
+    setMiniAppRestarting(true);
+    try {
+      const result = await channel.restartTelegramMiniAppTunnel.invoke({ pluginId: 'telegram_default' });
+      if (!result.success) {
+        Message.error(result.msg || t('settings.assistant.telegramMiniAppRestartFailed', 'Failed to restart tunnel'));
+        return;
+      }
+      await loadMiniAppTunnelStatus();
+      Message.success(t('settings.assistant.telegramMiniAppRestarted', 'Tunnel restarted'));
+    } finally {
+      setMiniAppRestarting(false);
     }
   };
 
@@ -534,18 +577,40 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
             <Switch checked={miniAppEnabled} onChange={setMiniAppEnabled} />
           </PreferenceRow>
           <PreferenceRow
-            label={t('settings.assistant.telegramMiniAppUrlLabel', 'Public WebUI URL')}
+            label={t('settings.assistant.telegramMiniAppModeLabel', 'Connection mode')}
             description={t(
-              'settings.assistant.telegramMiniAppUrlDesc',
-              'Must be a publicly accessible HTTPS URL, e.g. https://your-domain.com/telegram'
+              'settings.assistant.telegramMiniAppModeDesc',
+              'Cloudflare Temporary Tunnel is currently the only mode. The public URL is generated automatically.'
             )}
           >
-            <Input
-              value={miniAppUrl}
-              onChange={setMiniAppUrl}
-              placeholder={t('settings.assistant.telegramMiniAppUrlPlaceholder', 'https://your-domain.com/telegram')}
-              style={{ width: 320 }}
-            />
+            <Select value={miniAppAccessMode} style={{ width: 320 }} onChange={(value) => setMiniAppAccessMode(value)}>
+              <Select.Option value='cloudflare_temporary'>
+                {t('settings.assistant.telegramMiniAppModeCloudflareTemporary', 'Cloudflare Temporary Tunnel')}
+              </Select.Option>
+            </Select>
+          </PreferenceRow>
+          <PreferenceRow
+            label={t('settings.assistant.telegramMiniAppStatusLabel', 'Status')}
+            description={t(
+              'settings.assistant.telegramMiniAppWarning',
+              'Cloudflare Temporary Tunnel is free and no account is required, but URL is temporary and may change after restart. This mode is recommended for testing and personal use.'
+            )}
+          >
+            <div className='flex flex-col items-end gap-6px max-w-420px'>
+              <div className='text-13px text-t-primary'>
+                {miniAppTunnelStatus === 'active'
+                  ? t('settings.assistant.telegramMiniAppStatusActive', '● Active')
+                  : miniAppTunnelStatus === 'starting'
+                    ? t('settings.assistant.telegramMiniAppStatusStarting', '● Starting tunnel...')
+                    : miniAppTunnelStatus === 'error'
+                      ? t('settings.assistant.telegramMiniAppStatusError', '● Tunnel error')
+                      : miniAppTunnelStatus === 'stopped'
+                        ? t('settings.assistant.telegramMiniAppStatusStopped', '● Tunnel stopped')
+                        : t('settings.assistant.telegramMiniAppStatusIdle', '● Idle')}
+              </div>
+              {miniAppPublicUrl && <code className='text-12px text-t-secondary break-all'>{miniAppPublicUrl}</code>}
+              {miniAppTunnelError && <span className='text-12px text-red-500 break-all'>{miniAppTunnelError}</span>}
+            </div>
           </PreferenceRow>
           <PreferenceRow
             label={t('settings.assistant.telegramMiniAppButtonTextLabel', 'Button Text')}
@@ -561,9 +626,19 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
               style={{ width: 200 }}
             />
           </PreferenceRow>
-          <div className='flex justify-end'>
+          <div className='flex justify-end gap-8px'>
+            <Button onClick={handleRestartMiniAppTunnel} loading={miniAppRestarting} disabled={!miniAppEnabled}>
+              {t('settings.assistant.telegramMiniAppRestart', 'Restart Tunnel')}
+            </Button>
+            <Button
+              onClick={() => copyToClipboard(miniAppPublicUrl)}
+              icon={<Copy size={14} />}
+              disabled={!miniAppPublicUrl}
+            >
+              {t('settings.assistant.telegramMiniAppCopyUrl', 'Copy URL')}
+            </Button>
             <Button type='primary' loading={miniAppSaving} onClick={handleSaveMiniAppSettings}>
-              {t('settings.assistant.telegramMiniAppSave', 'Save Mini App Settings')}
+              {t('settings.assistant.telegramMiniAppSave', 'Save')}
             </Button>
           </div>
         </div>
