@@ -84,6 +84,11 @@ export interface IPluginConfigOptions {
   webhookUrl?: string;
   rateLimit?: number; // Max messages per minute
   requireMention?: boolean; // Require @mention in groups
+  miniAppEnabled?: boolean;
+  miniAppAccessMode?: 'cloudflare_temporary';
+  miniAppPublicUrl?: string;
+  miniAppButtonText?: string;
+  miniAppTunnelStatus?: 'idle' | 'starting' | 'active' | 'error' | 'stopped';
   // Extension plugins may define additional primitive config fields
   [key: string]: string | number | boolean | undefined;
 }
