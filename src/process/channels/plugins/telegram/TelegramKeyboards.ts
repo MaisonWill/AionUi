@@ -158,6 +158,13 @@ export function createToolConfirmationKeyboard(
   return keyboard;
 }
 
+/**
+ * Web App launcher keyboard
+ */
+export function createWebAppKeyboard(text: string, url: string): InlineKeyboard {
+  return new InlineKeyboard().webApp(text, url);
+}
+
 // ==================== Keyboard Utilities ====================
 
 /**

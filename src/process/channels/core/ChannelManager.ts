@@ -257,6 +257,16 @@ export class ChannelManager {
       if (token) {
         credentials = { token };
       }
+
+      const miniAppEnabled = config.miniAppEnabled;
+      const miniAppUrl = config.miniAppUrl;
+      const miniAppButtonText = config.miniAppButtonText;
+      pluginRuntimeConfig = {
+        ...pluginRuntimeConfig,
+        ...(typeof miniAppEnabled === 'boolean' ? { miniAppEnabled } : {}),
+        ...(typeof miniAppUrl === 'string' ? { miniAppUrl: miniAppUrl.trim() } : {}),
+        ...(typeof miniAppButtonText === 'string' ? { miniAppButtonText: miniAppButtonText.trim() } : {}),
+      };
     } else if (pluginType === 'lark') {
       const appId = config.appId as string | undefined;
       const appSecret = config.appSecret as string | undefined;

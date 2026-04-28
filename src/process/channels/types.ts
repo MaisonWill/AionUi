@@ -84,6 +84,9 @@ export interface IPluginConfigOptions {
   webhookUrl?: string;
   rateLimit?: number; // Max messages per minute
   requireMention?: boolean; // Require @mention in groups
+  miniAppEnabled?: boolean;
+  miniAppUrl?: string;
+  miniAppButtonText?: string;
   // Extension plugins may define additional primitive config fields
   [key: string]: string | number | boolean | undefined;
 }

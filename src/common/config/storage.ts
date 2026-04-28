@@ -141,6 +141,10 @@ export interface IConfigStorageRefer {
     customAgentId?: string;
     name?: string;
   };
+  // Telegram Mini App launcher settings
+  'assistant.telegram.miniAppEnabled'?: boolean;
+  'assistant.telegram.miniAppUrl'?: string;
+  'assistant.telegram.miniAppButtonText'?: string;
   // Lark assistant default model / Lark 助手默认模型
   'assistant.lark.defaultModel'?: {
     id: string;

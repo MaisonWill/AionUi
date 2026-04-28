@@ -9,7 +9,7 @@ import { acpConversation, channel } from '@/common/adapter/ipcBridge';
 import { ConfigStorage } from '@/common/config/storage';
 import GeminiModelSelector from '@/renderer/pages/conversation/platforms/gemini/GeminiModelSelector';
 import type { GeminiModelSelection } from '@/renderer/pages/conversation/platforms/gemini/useGeminiModelSelection';
-import { Button, Dropdown, Empty, Input, Menu, Message, Spin, Tooltip } from '@arco-design/web-react';
+import { Button, Dropdown, Empty, Input, Menu, Message, Spin, Switch, Tooltip } from '@arco-design/web-react';
 import { CheckOne, CloseOne, Copy, Delete, Down, Refresh } from '@icon-park/react';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -68,6 +68,10 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
   const [usersLoading, setUsersLoading] = useState(false);
   const [pendingPairings, setPendingPairings] = useState<IChannelPairingRequest[]>([]);
   const [authorizedUsers, setAuthorizedUsers] = useState<IChannelUser[]>([]);
+  const [miniAppEnabled, setMiniAppEnabled] = useState(false);
+  const [miniAppUrl, setMiniAppUrl] = useState('');
+  const [miniAppButtonText, setMiniAppButtonText] = useState('Open AionUi');
+  const [miniAppSaving, setMiniAppSaving] = useState(false);
 
   // Agent selection (used for Telegram conversations)
   const [availableAgents, setAvailableAgents] = useState<
@@ -117,9 +121,12 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
   useEffect(() => {
     const loadAgentsAndSelection = async () => {
       try {
-        const [agentsResp, saved] = await Promise.all([
+        const [agentsResp, saved, savedMiniAppEnabled, savedMiniAppUrl, savedMiniAppButtonText] = await Promise.all([
           acpConversation.getAvailableAgents.invoke(),
           ConfigStorage.get('assistant.telegram.agent'),
+          ConfigStorage.get('assistant.telegram.miniAppEnabled'),
+          ConfigStorage.get('assistant.telegram.miniAppUrl'),
+          ConfigStorage.get('assistant.telegram.miniAppButtonText'),
         ]);
 
         if (agentsResp.success && agentsResp.data) {
@@ -143,6 +150,16 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
           });
         } else if (typeof saved === 'string') {
           setSelectedAgent({ backend: saved as string });
+        }
+
+        if (typeof savedMiniAppEnabled === 'boolean') {
+          setMiniAppEnabled(savedMiniAppEnabled);
+        }
+        if (typeof savedMiniAppUrl === 'string') {
+          setMiniAppUrl(savedMiniAppUrl);
+        }
+        if (typeof savedMiniAppButtonText === 'string' && savedMiniAppButtonText.trim()) {
+          setMiniAppButtonText(savedMiniAppButtonText);
         }
       } catch (error) {
         console.error('[TelegramConfig] Failed to load agents:', error);
@@ -233,7 +250,12 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
     try {
       const result = await channel.enablePlugin.invoke({
         pluginId: 'telegram_default',
-        config: { token: telegramToken.trim() },
+        config: {
+          token: telegramToken.trim(),
+          miniAppEnabled,
+          miniAppUrl: miniAppUrl.trim(),
+          miniAppButtonText: miniAppButtonText.trim(),
+        },
       });
 
       if (result.success) {
@@ -246,6 +268,49 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
       }
     } catch (error: any) {
       console.error('[ChannelSettings] Auto-enable failed:', error);
+    }
+  };
+
+  const handleSaveMiniAppSettings = async () => {
+    if (miniAppEnabled && !miniAppUrl.trim()) {
+      Message.warning(
+        t('settings.assistant.telegramMiniAppUrlRequired', 'Please enter a public HTTPS URL for Telegram Mini App')
+      );
+      return;
+    }
+
+    setMiniAppSaving(true);
+    try {
+      await Promise.all([
+        ConfigStorage.set('assistant.telegram.miniAppEnabled', miniAppEnabled),
+        ConfigStorage.set('assistant.telegram.miniAppUrl', miniAppUrl.trim()),
+        ConfigStorage.set('assistant.telegram.miniAppButtonText', miniAppButtonText.trim() || 'Open AionUi'),
+      ]);
+
+      if (pluginStatus?.enabled) {
+        const result = await channel.enablePlugin.invoke({
+          pluginId: 'telegram_default',
+          config: {
+            miniAppEnabled,
+            miniAppUrl: miniAppUrl.trim(),
+            miniAppButtonText: miniAppButtonText.trim(),
+          },
+        });
+        if (!result.success) {
+          Message.error(
+            result.msg || t('settings.assistant.telegramMiniAppApplyFailed', 'Failed to apply Mini App settings')
+          );
+          return;
+        }
+      }
+
+      Message.success(t('settings.assistant.telegramMiniAppSaved', 'Mini App settings saved'));
+    } catch (error: any) {
+      Message.error(
+        error.message || t('settings.assistant.telegramMiniAppSaveFailed', 'Failed to save Mini App settings')
+      );
+    } finally {
+      setMiniAppSaving(false);
     }
   };
 
@@ -454,6 +519,54 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
             </Button>
           </Dropdown>
         </PreferenceRow>
+      </div>
+
+      <div className='bg-fill-1 rd-12px p-16px'>
+        <SectionHeader title={t('settings.assistant.telegramMiniAppTitle', 'Telegram Mini App')} />
+        <div className='flex flex-col gap-12px'>
+          <PreferenceRow
+            label={t('settings.assistant.telegramMiniAppEnable', 'Enable Mini App')}
+            description={t(
+              'settings.assistant.telegramMiniAppEnableDesc',
+              'Expose AionUi WebUI as Telegram Mini App menu button and /app command'
+            )}
+          >
+            <Switch checked={miniAppEnabled} onChange={setMiniAppEnabled} />
+          </PreferenceRow>
+          <PreferenceRow
+            label={t('settings.assistant.telegramMiniAppUrlLabel', 'Public WebUI URL')}
+            description={t(
+              'settings.assistant.telegramMiniAppUrlDesc',
+              'Must be a publicly accessible HTTPS URL, e.g. https://your-domain.com/telegram'
+            )}
+          >
+            <Input
+              value={miniAppUrl}
+              onChange={setMiniAppUrl}
+              placeholder={t('settings.assistant.telegramMiniAppUrlPlaceholder', 'https://your-domain.com/telegram')}
+              style={{ width: 320 }}
+            />
+          </PreferenceRow>
+          <PreferenceRow
+            label={t('settings.assistant.telegramMiniAppButtonTextLabel', 'Button Text')}
+            description={t(
+              'settings.assistant.telegramMiniAppButtonTextDesc',
+              'Shown in Telegram menu button and /app inline launcher'
+            )}
+          >
+            <Input
+              value={miniAppButtonText}
+              onChange={setMiniAppButtonText}
+              placeholder={t('settings.assistant.telegramMiniAppButtonTextPlaceholder', 'Open AionUi')}
+              style={{ width: 200 }}
+            />
+          </PreferenceRow>
+          <div className='flex justify-end'>
+            <Button type='primary' loading={miniAppSaving} onClick={handleSaveMiniAppSettings}>
+              {t('settings.assistant.telegramMiniAppSave', 'Save Mini App Settings')}
+            </Button>
+          </div>
+        </div>
       </div>
 
       {/* Default Model Selection */}
