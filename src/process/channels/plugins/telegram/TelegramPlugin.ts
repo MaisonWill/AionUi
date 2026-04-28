@@ -16,7 +16,7 @@ import {
   toTelegramSendParams,
   toUnifiedIncomingMessage,
 } from './TelegramAdapter';
-import { extractAction, extractCategory } from './TelegramKeyboards';
+import { createWebAppKeyboard, extractAction, extractCategory } from './TelegramKeyboards';
 
 /**
  * TelegramPlugin - Telegram Bot integration for Personal Assistant
@@ -73,6 +73,7 @@ export class TelegramPlugin extends BasePlugin {
     try {
       // Get bot info first to validate the token
       this.botInfo = await this.bot.api.getMe();
+      await this.setupMiniAppMenuButton();
 
       // Start polling - grammY handles webhook deletion internally
       // grammY 内部会自动删除 webhook
@@ -195,6 +196,27 @@ export class TelegramPlugin extends BasePlugin {
     this.bot.command('start', async (ctx) => {
       await this.handleStartCommand(ctx);
     });
+    this.bot.command('help', async (ctx) => {
+      await this.handleSlashCommand(ctx, '/help');
+    });
+    this.bot.command('status', async (ctx) => {
+      await this.handleSlashCommand(ctx, '/status');
+    });
+    this.bot.command('new', async (ctx) => {
+      await this.handleSlashCommand(ctx, '/new');
+    });
+    this.bot.command('agent', async (ctx) => {
+      await this.handleSlashCommand(ctx, '/agent');
+    });
+    this.bot.command('pair', async (ctx) => {
+      await this.handleSlashCommand(ctx, '/pair');
+    });
+    this.bot.command('app', async (ctx) => {
+      await this.handleOpenAppCommand(ctx);
+    });
+    this.bot.command('webui', async (ctx) => {
+      await this.handleOpenAppCommand(ctx);
+    });
 
     // Handle all text messages
     this.bot.on('message:text', async (ctx) => {
@@ -269,6 +291,11 @@ export class TelegramPlugin extends BasePlugin {
     this.activeUsers.add(userId);
 
     try {
+      // Check for slash commands from text input
+      if (await this.handleSlashTextCommand(ctx, text)) {
+        return;
+      }
+
       // Check for button text commands
       if (await this.handleButtonCommand(ctx, text)) {
         return;
@@ -295,6 +322,150 @@ export class TelegramPlugin extends BasePlugin {
       // 捕获错误以防止它们停止 bot
       console.error(`[TelegramPlugin] Error handling text message:`, error);
       // Don't re-throw - let grammY continue processing
+    }
+  }
+
+  /**
+   * Handle slash commands from grammY command middleware
+   */
+  private async handleSlashCommand(ctx: Context, command: string): Promise<void> {
+    const unifiedMessage = toUnifiedIncomingMessage(ctx);
+    if (!unifiedMessage || !this.messageHandler) return;
+
+    const slashAction = this.getSlashCommandAction(command);
+    if (!slashAction) return;
+
+    unifiedMessage.content.type = 'action';
+    unifiedMessage.content.text = slashAction.action;
+    unifiedMessage.action = {
+      type: slashAction.type as any,
+      name: slashAction.action,
+    };
+
+    // Don't await - process in background
+    void this.messageHandler(unifiedMessage).catch((error) =>
+      console.error(`[TelegramPlugin] Error handling slash command ${command}:`, error)
+    );
+  }
+
+  /**
+   * Handle slash commands entered as plain text (e.g. "/new@my_bot")
+   */
+  private async handleSlashTextCommand(ctx: Context, text: string): Promise<boolean> {
+    const match = text.trim().match(/^\/([a-z_]+)(?:@[\w_]+)?(?:\s|$)/i);
+    if (!match) return false;
+
+    const slashCommand = `/${match[1].toLowerCase()}`;
+    if (slashCommand === '/start') {
+      // /start is handled by dedicated command middleware
+      return false;
+    }
+    if (slashCommand === '/app' || slashCommand === '/webui') {
+      await this.handleOpenAppCommand(ctx);
+      return true;
+    }
+
+    const slashAction = this.getSlashCommandAction(slashCommand);
+    if (!slashAction || !this.messageHandler) return false;
+
+    const unifiedMessage = toUnifiedIncomingMessage(ctx);
+    if (!unifiedMessage) return false;
+
+    unifiedMessage.content.type = 'action';
+    unifiedMessage.content.text = slashAction.action;
+    unifiedMessage.action = {
+      type: slashAction.type as any,
+      name: slashAction.action,
+    };
+
+    // Don't await - process in background
+    void this.messageHandler(unifiedMessage).catch((error) =>
+      console.error(`[TelegramPlugin] Error handling slash text command ${slashCommand}:`, error)
+    );
+    return true;
+  }
+
+  /**
+   * Map slash commands to channel actions
+   */
+  private getSlashCommandAction(command: string): { type: 'system' | 'platform'; action: string } | null {
+    const slashActions: Record<string, { type: 'system' | 'platform'; action: string }> = {
+      '/help': { type: 'system', action: 'help.show' },
+      '/status': { type: 'system', action: 'session.status' },
+      '/new': { type: 'system', action: 'session.new' },
+      '/agent': { type: 'system', action: 'agent.show' },
+      '/pair': { type: 'platform', action: 'pairing.check' },
+    };
+
+    return slashActions[command] ?? null;
+  }
+
+  /**
+   * Setup bot menu button for Telegram Mini App
+   */
+  private async setupMiniAppMenuButton(): Promise<void> {
+    if (!this.bot || !this.config?.config?.miniAppEnabled) {
+      return;
+    }
+
+    const url = this.getMiniAppUrl();
+    if (!url) {
+      return;
+    }
+
+    const buttonText = this.getMiniAppButtonText();
+    await this.bot.api.setChatMenuButton({
+      menu_button: {
+        type: 'web_app',
+        text: buttonText,
+        web_app: { url },
+      },
+    });
+  }
+
+  /**
+   * Handle /app and /webui commands
+   */
+  private async handleOpenAppCommand(ctx: Context): Promise<void> {
+    const url = this.getMiniAppUrl();
+    if (!url) {
+      await ctx.reply('⚠️ Mini App URL is not configured. Please set it in AionUi Telegram settings.');
+      return;
+    }
+
+    const buttonText = this.getMiniAppButtonText();
+    await ctx.reply('🚀 Open AionUi WebUI:', {
+      reply_markup: createWebAppKeyboard(buttonText, url),
+    });
+  }
+
+  private getMiniAppButtonText(): string {
+    const value = this.config?.config?.miniAppButtonText;
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim().slice(0, 32);
+    }
+    return 'Open AionUi';
+  }
+
+  private getMiniAppUrl(): string | null {
+    const value = this.config?.config?.miniAppPublicUrl;
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    try {
+      const parsed = new URL(trimmed);
+      if (parsed.protocol !== 'https:') {
+        return null;
+      }
+      return parsed.toString();
+    } catch {
+      return null;
     }
   }
 

@@ -341,5 +341,30 @@ export function initChannelBridge(channelRepo: IChannelRepository): void {
     }
   });
 
+  channel.getTelegramMiniAppTunnelStatus.provider(async () => {
+    try {
+      const manager = getChannelManager();
+      return {
+        success: true,
+        data: manager.getTelegramMiniAppTunnelStatus(),
+      };
+    } catch (error: any) {
+      return { success: false, msg: error.message };
+    }
+  });
+
+  channel.restartTelegramMiniAppTunnel.provider(async ({ pluginId }) => {
+    try {
+      const manager = getChannelManager();
+      const result = await manager.restartTelegramMiniAppTunnel(pluginId || 'telegram_default');
+      if (!result.success || !result.status) {
+        return { success: false, msg: result.error || 'Failed to restart mini app tunnel' };
+      }
+      return { success: true, data: result.status };
+    } catch (error: any) {
+      return { success: false, msg: error.message };
+    }
+  });
+
   console.log('[ChannelBridge] Initialized');
 }

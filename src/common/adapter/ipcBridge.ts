@@ -1245,6 +1245,26 @@ export const channel = {
       model?: { id: string; useModel: string };
     }
   >('channel.sync-channel-settings'),
+  getTelegramMiniAppTunnelStatus: bridge.buildProvider<
+    IBridgeResponse<{
+      state: 'idle' | 'starting' | 'active' | 'error' | 'stopped';
+      publicUrl?: string;
+      localUrl?: string;
+      error?: string;
+      startedAt?: number;
+    }>,
+    void
+  >('channel.get-telegram-miniapp-tunnel-status'),
+  restartTelegramMiniAppTunnel: bridge.buildProvider<
+    IBridgeResponse<{
+      state: 'idle' | 'starting' | 'active' | 'error' | 'stopped';
+      publicUrl?: string;
+      localUrl?: string;
+      error?: string;
+      startedAt?: number;
+    }>,
+    { pluginId?: string }
+  >('channel.restart-telegram-miniapp-tunnel'),
 
   // Events
   pairingRequested: bridge.buildEmitter<IChannelPairingRequest>('channel.pairing-requested'),
