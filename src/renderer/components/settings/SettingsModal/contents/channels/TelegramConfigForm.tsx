@@ -127,21 +127,14 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
   useEffect(() => {
     const loadAgentsAndSelection = async () => {
       try {
-        const [
-          agentsResp,
-          saved,
-          savedMiniAppEnabled,
-          savedMiniAppAccessMode,
-          savedMiniAppPublicUrl,
-          savedMiniAppButtonText,
-        ] = await Promise.all([
-          acpConversation.getAvailableAgents.invoke(),
-          ConfigStorage.get('assistant.telegram.agent'),
-          ConfigStorage.get('assistant.telegram.miniAppEnabled'),
-          ConfigStorage.get('assistant.telegram.miniAppAccessMode'),
-          ConfigStorage.get('assistant.telegram.miniAppPublicUrl'),
-          ConfigStorage.get('assistant.telegram.miniAppButtonText'),
-        ]);
+        const [agentsResp, saved, savedMiniAppEnabled, savedMiniAppAccessMode, savedMiniAppButtonText] =
+          await Promise.all([
+            acpConversation.getAvailableAgents.invoke(),
+            ConfigStorage.get('assistant.telegram.agent'),
+            ConfigStorage.get('assistant.telegram.miniAppEnabled'),
+            ConfigStorage.get('assistant.telegram.miniAppAccessMode'),
+            ConfigStorage.get('assistant.telegram.miniAppButtonText'),
+          ]);
 
         if (agentsResp.success && agentsResp.data) {
           const list = agentsResp.data
@@ -171,9 +164,6 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
         }
         if (savedMiniAppAccessMode === 'cloudflare_temporary') {
           setMiniAppAccessMode(savedMiniAppAccessMode);
-        }
-        if (typeof savedMiniAppPublicUrl === 'string') {
-          setMiniAppPublicUrl(savedMiniAppPublicUrl);
         }
         if (typeof savedMiniAppButtonText === 'string' && savedMiniAppButtonText.trim()) {
           setMiniAppButtonText(savedMiniAppButtonText);
@@ -339,7 +329,6 @@ const TelegramConfigForm: React.FC<TelegramConfigFormProps> = ({
       await Promise.all([
         ConfigStorage.set('assistant.telegram.miniAppEnabled', miniAppEnabled),
         ConfigStorage.set('assistant.telegram.miniAppAccessMode', miniAppAccessMode),
-        ConfigStorage.set('assistant.telegram.miniAppPublicUrl', miniAppPublicUrl.trim()),
         ConfigStorage.set('assistant.telegram.miniAppButtonText', miniAppButtonText.trim() || 'Open AionUi'),
       ]);
 

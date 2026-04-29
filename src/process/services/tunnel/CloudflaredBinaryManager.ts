@@ -61,14 +61,14 @@ async function downloadFile(url: string, destination: string): Promise<void> {
   });
 }
 
-async function maybeVerifyChecksum(binaryPath: string, checksumUrl: string): Promise<void> {
-  const checksumPath = `${binaryPath}.sha256`;
+async function maybeVerifyChecksum(targetPath: string, checksumUrl: string): Promise<void> {
+  const checksumPath = `${targetPath}.sha256`;
   try {
     await downloadFile(checksumUrl, checksumPath);
     const checksumContent = await readFile(checksumPath, 'utf8');
     const expected = checksumContent.trim().split(/\s+/)[0];
     if (!expected) return;
-    const bytes = await readFile(binaryPath);
+    const bytes = await readFile(targetPath);
     const actual = createHash('sha256').update(bytes).digest('hex');
     if (actual !== expected) {
       throw new Error('Checksum verification failed for downloaded cloudflared binary.');
@@ -138,25 +138,13 @@ export class CloudflaredBinaryManager {
 
     await downloadFile(downloadUrl, tmpPath);
 
-    if (asset.endsWith('.tgz')) {
-      const extract = spawnSync('tar', ['-xzf', tmpPath, '-C', directory]);
-      if (extract.status !== 0) {
-        throw new Error(`Failed to extract cloudflared archive: ${extract.stderr?.toString() || 'unknown error'}`);
-      }
-      await unlink(tmpPath).catch(() => {
-        // noop
-      });
-    } else {
+    const checksumUrl = `${downloadUrl}.sha256`;
+    const checksumTarget = asset.endsWith('.tgz') ? tmpPath : executablePath;
+    if (!asset.endsWith('.tgz')) {
       await rename(tmpPath, executablePath);
     }
-
-    if (process.platform !== 'win32') {
-      await chmod(executablePath, 0o755);
-    }
-
-    const checksumUrl = `${downloadUrl}.sha256`;
     try {
-      await maybeVerifyChecksum(executablePath, checksumUrl);
+      await maybeVerifyChecksum(checksumTarget, checksumUrl);
     } catch (error: any) {
       const message = error?.message ?? String(error);
       if (message.includes('Download failed')) {
@@ -165,8 +153,25 @@ export class CloudflaredBinaryManager {
         await unlink(executablePath).catch(() => {
           // noop
         });
+        await unlink(tmpPath).catch(() => {
+          // noop
+        });
         throw error;
       }
+    }
+
+    if (asset.endsWith('.tgz')) {
+      const extract = spawnSync('tar', ['-xzf', tmpPath, '-C', directory]);
+      if (extract.status !== 0) {
+        throw new Error(`Failed to extract cloudflared archive: ${extract.stderr?.toString() || 'unknown error'}`);
+      }
+      await unlink(tmpPath).catch(() => {
+        // noop
+      });
+    }
+
+    if (process.platform !== 'win32') {
+      await chmod(executablePath, 0o755);
     }
 
     await writeFile(join(directory, 'VERSION'), version);

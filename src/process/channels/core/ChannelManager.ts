@@ -215,6 +215,33 @@ export class ChannelManager {
       }
 
       try {
+        if (
+          plugin.type === 'telegram' &&
+          plugin.config?.miniAppEnabled &&
+          plugin.config?.miniAppAccessMode === 'cloudflare_temporary'
+        ) {
+          try {
+            const localUrl = await this.ensureWebUiLocalUrl();
+            const tunnelStatus = await getCloudflareTemporaryTunnelManager().start(localUrl);
+            if (tunnelStatus.publicUrl) {
+              const updatedPlugin: IChannelPluginConfig = {
+                ...plugin,
+                config: {
+                  ...plugin.config,
+                  miniAppPublicUrl: tunnelStatus.publicUrl,
+                  miniAppTunnelStatus: tunnelStatus.state,
+                },
+                updatedAt: Date.now(),
+              };
+              db.upsertChannelPlugin(updatedPlugin);
+              await this.startPlugin(updatedPlugin);
+              continue;
+            }
+          } catch (error) {
+            console.error('[ChannelManager] Failed to auto-start Cloudflare tunnel for Telegram:', error);
+          }
+        }
+
         await this.startPlugin(plugin);
       } catch (error) {
         console.error(`[ChannelManager] Failed to start plugin ${plugin.id}:`, error);
