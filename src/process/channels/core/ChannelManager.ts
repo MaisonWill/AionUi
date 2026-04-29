@@ -237,8 +237,32 @@ export class ChannelManager {
               await this.startPlugin(updatedPlugin);
               continue;
             }
+            const safePlugin: IChannelPluginConfig = {
+              ...plugin,
+              config: {
+                ...plugin.config,
+                miniAppPublicUrl: '',
+                miniAppTunnelStatus: 'error',
+              },
+              updatedAt: Date.now(),
+            };
+            db.upsertChannelPlugin(safePlugin);
+            await this.startPlugin(safePlugin);
+            continue;
           } catch (error) {
             console.error('[ChannelManager] Failed to auto-start Cloudflare tunnel for Telegram:', error);
+            const safePlugin: IChannelPluginConfig = {
+              ...plugin,
+              config: {
+                ...plugin.config,
+                miniAppPublicUrl: '',
+                miniAppTunnelStatus: 'error',
+              },
+              updatedAt: Date.now(),
+            };
+            db.upsertChannelPlugin(safePlugin);
+            await this.startPlugin(safePlugin);
+            continue;
           }
         }
 
