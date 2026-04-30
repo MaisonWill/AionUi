@@ -226,6 +226,14 @@ export class PluginManager {
   }
 
   /**
+   * Restart a plugin with fresh configuration
+   */
+  async restartPlugin(config: IChannelPluginConfig): Promise<void> {
+    await this.stopPlugin(config.id);
+    await this.startPlugin(config);
+  }
+
+  /**
    * Stop all plugins
    */
   async stopAll(): Promise<void> {

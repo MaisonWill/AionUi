@@ -33,6 +33,8 @@ vi.mock('../../src/common/adapter/ipcBridge', () => ({
     revokeUser: makeChannel('revokeUser'),
     getActiveSessions: makeChannel('getActiveSessions'),
     syncChannelSettings: makeChannel('syncChannelSettings'),
+    getTelegramMiniAppTunnelStatus: makeChannel('getTelegramMiniAppTunnelStatus'),
+    restartTelegramMiniAppTunnel: makeChannel('restartTelegramMiniAppTunnel'),
   },
 }));
 
@@ -42,6 +44,8 @@ vi.mock('@process/channels/core/ChannelManager', () => ({
     disablePlugin: vi.fn(async () => ({ success: true })),
     testPlugin: vi.fn(async () => ({ success: true })),
     syncChannelSettings: vi.fn(async () => ({ success: true })),
+    getTelegramMiniAppTunnelStatus: vi.fn(() => ({ state: 'idle' })),
+    restartTelegramMiniAppTunnel: vi.fn(async () => ({ success: true, status: { state: 'active' } })),
   })),
 }));
 
@@ -261,6 +265,20 @@ describe('channelBridge', () => {
 
       expect(result.success).toBe(false);
       expect(result.msg).toBe('sessions unavailable');
+    });
+  });
+
+  describe('mini app tunnel ipc', () => {
+    it('returns mini app tunnel status', async () => {
+      const result = await handlers['getTelegramMiniAppTunnelStatus']();
+      expect(result.success).toBe(true);
+      expect(result.data.state).toBe('idle');
+    });
+
+    it('restarts mini app tunnel', async () => {
+      const result = await handlers['restartTelegramMiniAppTunnel']({ pluginId: 'telegram_default' });
+      expect(result.success).toBe(true);
+      expect(result.data.state).toBe('active');
     });
   });
 });
