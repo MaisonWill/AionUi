@@ -1,4 +1,4 @@
-/**
+﻿/**
  * @license
  * Copyright 2025 AionUi (aionui.com)
  * SPDX-License-Identifier: Apache-2.0
@@ -38,12 +38,16 @@ export const initializeProcess = async () => {
   }
   mark('ExtensionRegistry');
 
-  // Initialize Channel subsystem
-  try {
-    await getChannelManager().initialize();
-  } catch (error) {
-    console.error('[Process] Failed to initialize ChannelManager:', error);
-    // Don't fail app startup if channel fails to initialize
-  }
-  mark('ChannelManager');
+  // Initialize Channel subsystem in background.
+  // Channel plugins may start external services such as Telegram polling or Cloudflare tunnels.
+  // They must not block main window creation.
+  void getChannelManager()
+    .initialize()
+    .then(() => {
+      mark('ChannelManager');
+    })
+    .catch((error) => {
+      console.error('[Process] Failed to initialize ChannelManager:', error);
+    });
 };
+
